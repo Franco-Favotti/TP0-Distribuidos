@@ -3,6 +3,8 @@ package client
 import (
 	"net"
 	"time"
+	"os"
+	"bufio"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
@@ -19,6 +21,8 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	AgencyId   string
+	InputFile string
+	OutputFile string
 }
 
 type Client struct {
@@ -62,6 +66,42 @@ func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
 	defer client.conn.Close()
 
+	inputFile, err := os.Open(client.config.InputFile)
+	if err != nil {
+		return err
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(client.config.OutputFile)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	scanner := bufio.NewScanner(inputFile)
+
+	for scanner.Scan(){
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		if err := safe_socket.SendAll(client.conn, []byte(line+"\n")); err != nil {
+			logger.Error("send-message", logger.Fail)
+			return err
+		}
+
+		response, err := safe_socket.RecvAll(client.conn, 1024)
+		if err != nil {
+			logger.Error("recv-response", logger.Fail)
+			return err
+		}
+
+		if _, err := outputFile.WriteString(string(response)); err != nil {
+			return err
+		}
+	}
+	/*
 	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
 		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
 		logger.Info(mainAction, logger.InProgress, messageArgs...)
@@ -85,7 +125,7 @@ func (client *Client) Run() error {
 		}
 
 		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
-	}
+	}*/
 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
 
 	return nil
