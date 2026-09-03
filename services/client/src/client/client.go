@@ -5,17 +5,17 @@ import (
 	"time"
 	"os"
 	"bufio"
+	"fmt"
+	"strings"
+	"strconv"
 
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
-	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
 
-const CONNECTION_ATTEMPTS_MAX = 3
-const CONNECTION_ATTEMPS_DELAY_MS = 200
+const CONNECTION_ATTEMPTS_MAX = 5	
+const CONNECTION_ATTEMPS_DELAY_MS = 500
 
-const ECHO_CLIENT_BUFFER_SIZE = 512
-const ECHO_CLIENT_MESSAGE_AMOUNT = 3
-const ECHO_CLIENT_MESSAGE_DELAY_MS = 1000
 
 type ClientConfig struct {
 	ServerHost string
@@ -23,6 +23,7 @@ type ClientConfig struct {
 	AgencyId   string
 	InputFile string
 	OutputFile string
+	BatchSize  string
 }
 
 type Client struct {
@@ -78,6 +79,33 @@ func (client *Client) Run() error {
 	}
 	defer outputFile.Close()
 
+	bets := map[int]string{}
+	batch := []protocol.Bet{}
+	batchSize, err := strconv.Atoi(client.config.BatchSize)
+
+	if err != nil {
+		return fmt.Errorf("BATCH_SIZE inválido: %q", client.config.BatchSize)
+	}
+	processBatch := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		payload := protocol.Encode_bet_batch(client.config.AgencyId, batch)
+		if err := protocol.Write_message(client.conn, protocol.MsgBetBatch, payload); err != nil {
+			return err
+		}
+		msgType, _, err := protocol.Read_message(client.conn)
+		if err != nil {
+			return err
+		}
+		if msgType != protocol.MsgBatchAck {
+			return fmt.Errorf("unexpected response type %d", msgType)
+		}
+		batch = batch[:0]
+		return nil
+	}
+
+
 	scanner := bufio.NewScanner(inputFile)
 
 	for scanner.Scan(){
@@ -86,47 +114,73 @@ func (client *Client) Run() error {
 			continue
 		}
 
-		if err := safe_socket.SendAll(client.conn, []byte(line+"\n")); err != nil {
-			logger.Error("send-message", logger.Fail)
-			return err
-		}
+		fields := strings.Split(line, ",")
+		document, err := strconv.Atoi(fields[2])
 
-		response, err := safe_socket.RecvAll(client.conn, 1024)
 		if err != nil {
-			logger.Error("recv-response", logger.Fail)
+			return fmt.Errorf("documento inválido en input: %q", fields[2])
+		}
+
+		bets[document] = line
+
+		batch = append(batch, protocol.Bet{
+			FirstName: fields[0], LastName: fields[1], Document: fields[2],
+			Birthdate: fields[3], Number: fields[4],
+		})
+
+		if len(batch) >= batchSize {
+			if err := processBatch(); err != nil {
+				return err
+			}
+		}
+		/*payload := protocol.Encode_bet_batch(client.config.AgencyId, []protocol.Bet{bet})
+
+		if err := protocol.Write_message(client.conn, protocol.MsgBetBatch, payload); err != nil {
 			return err
 		}
 
-		if _, err := outputFile.WriteString(string(response)); err != nil {
+		msgType, _, err := protocol.Read_message(client.conn)
+		if err != nil {
 			return err
+		}
+
+		if msgType != protocol.MsgBatchAck {
+			return fmt.Errorf("unexpected response type %d", msgType)
+		}*/
+	
+	}
+	
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	if err := processBatch(); err != nil { 
+		return err
+	}
+
+	if err := protocol.Write_message(client.conn, protocol.MsgDone, nil); err != nil {
+		return err
+	}
+
+	msgType, payload, err := protocol.Read_message(client.conn)
+	if err != nil {
+		return err
+	}
+
+	if msgType != protocol.MsgWinners {
+		return fmt.Errorf("unexpected response type %d", msgType)
+	}
+
+	if len(payload) > 0 {
+		for _, documentStr := range strings.Split(string(payload), ",") {
+			document, err := strconv.Atoi(documentStr) 
+			if err != nil {
+				continue
+			}
+			if line, ok := bets[document]; ok {
+				outputFile.WriteString(line + "\n")
+			}
 		}
 	}
-	/*
-	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
-		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
-		logger.Info(mainAction, logger.InProgress, messageArgs...)
-
-		clientMessage := client.config.AgencyId
-
-		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
-			logger.Error("send-message", logger.Fail, messageArgs...)
-			return err
-		}
-
-		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
-		if err != nil {
-			logger.Error("recv-response", logger.Fail, messageArgs...)
-			return err
-		}
-
-		if string(responseBuffer) != clientMessage {
-			logger.Error("check-response", logger.Fail, messageArgs...)
-			return err
-		}
-
-		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
-	}*/
-	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
-
 	return nil
 }
