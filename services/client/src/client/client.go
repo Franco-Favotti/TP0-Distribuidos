@@ -14,7 +14,7 @@ import (
 )
 
 const CONNECTION_ATTEMPTS_MAX = 5	
-const CONNECTION_ATTEMPS_DELAY_MS = 500
+const CONNECTION_ATTEMPS_DELAY_MS = 1000
 
 
 type ClientConfig struct {

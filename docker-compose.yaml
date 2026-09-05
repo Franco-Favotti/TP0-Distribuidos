@@ -8,6 +8,7 @@ services:
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=server
       - SERVER_PORT=5678
+      - AGENCY_QUORUM_MIN=3
     ports:
       - "5678:5678"
 
@@ -24,6 +25,42 @@ services:
       - SERVER_PORT=5678
       - INPUT_FILE=/input/input-0.csv
       - OUTPUT_FILE=/output/output-0.csv
+      - BATCH_SIZE=5
+    volumes:
+      - ./input:/input
+      - ./output:/output
+
+  client_1:
+    build:
+      context: ./services/client
+      dockerfile: Dockerfile
+    container_name: client_1
+    depends_on:
+      - server
+    environment:
+      - AGENCY_ID=1
+      - SERVER_HOST=server
+      - SERVER_PORT=5678
+      - INPUT_FILE=/input/input-1.csv
+      - OUTPUT_FILE=/output/output-1.csv
+      - BATCH_SIZE=5
+    volumes:
+      - ./input:/input
+      - ./output:/output
+
+  client_2:
+    build:
+      context: ./services/client
+      dockerfile: Dockerfile
+    container_name: client_2
+    depends_on:
+      - server
+    environment:
+      - AGENCY_ID=2
+      - SERVER_HOST=server
+      - SERVER_PORT=5678
+      - INPUT_FILE=/input/input-2.csv
+      - OUTPUT_FILE=/output/output-2.csv
       - BATCH_SIZE=5
     volumes:
       - ./input:/input
