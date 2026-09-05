@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"os"
+	"os/signal"
+	"syscall"
 
 	client "github.com/7574-sistemas-distribuidos/tp-nivelador/src/client"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -30,7 +32,7 @@ func loadConfig() (client.ClientConfig, error) {
 	}
 
 	outputFile := os.Getenv("OUTPUT_FILE")
-	if inputFile == ""{
+	if outputFile == ""{
 		return client.ClientConfig{}, errors.New("OUTPUT_FILE environment variable is required")
 	}
 
@@ -56,13 +58,24 @@ func run() int {
 		return 1
 	}
 
-	client, err := client.NewClient(config)
+	c, err := client.NewClient(config)
 	if err != nil {
 		logger.Error("client-new", logger.Fail, "err", err)
-		return 1
+		return 1	
 	}
 
-	if err := client.Run(); err != nil {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		c.Shutdown()
+	}()
+
+	if err := c.Run(); err != nil {
+		if c.IsShuttingDown() {            
+			logger.Info("client-run", logger.Success) 
+			return 0                           
+		}      
 		logger.Error("client-run", logger.Fail, "err", err)
 		return 1
 	}

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"strconv"
+	"sync/atomic"
+	"io"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -29,6 +31,16 @@ type ClientConfig struct {
 type Client struct {
 	conn   net.Conn
 	config ClientConfig
+	shutdown atomic.Bool
+}
+
+func (client *Client) Shutdown() {
+	client.shutdown.Store(true)
+	client.conn.Close() 
+}
+
+func (client *Client) IsShuttingDown() bool {  
+	return client.shutdown.Load()
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -79,13 +91,16 @@ func (client *Client) Run() error {
 	}
 	defer outputFile.Close()
 
-	bets := map[int]string{}
-	batch := []protocol.Bet{}
+	//bets := map[int]string{}
+
 	batchSize, err := strconv.Atoi(client.config.BatchSize)
 
 	if err != nil {
 		return fmt.Errorf("BATCH_SIZE inválido: %q", client.config.BatchSize)
 	}
+
+	batch := make([]protocol.Bet, 0, batchSize)
+
 	processBatch := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -109,19 +124,23 @@ func (client *Client) Run() error {
 	scanner := bufio.NewScanner(inputFile)
 
 	for scanner.Scan(){
+		if client.shutdown.Load() {
+			return nil 
+		}
+
 		line := scanner.Text()
 		if line == "" {
 			continue
 		}
 
 		fields := strings.Split(line, ",")
-		document, err := strconv.Atoi(fields[2])
+		//document, err := strconv.Atoi(fields[2])
 
 		if err != nil {
 			return fmt.Errorf("documento inválido en input: %q", fields[2])
 		}
 
-		bets[document] = line
+		//bets[document] = line
 
 		batch = append(batch, protocol.Bet{
 			FirstName: fields[0], LastName: fields[1], Document: fields[2],
@@ -133,21 +152,7 @@ func (client *Client) Run() error {
 				return err
 			}
 		}
-		/*payload := protocol.Encode_bet_batch(client.config.AgencyId, []protocol.Bet{bet})
 
-		if err := protocol.Write_message(client.conn, protocol.MsgBetBatch, payload); err != nil {
-			return err
-		}
-
-		msgType, _, err := protocol.Read_message(client.conn)
-		if err != nil {
-			return err
-		}
-
-		if msgType != protocol.MsgBatchAck {
-			return fmt.Errorf("unexpected response type %d", msgType)
-		}*/
-	
 	}
 	
 	if err := scanner.Err(); err != nil {
@@ -171,16 +176,48 @@ func (client *Client) Run() error {
 		return fmt.Errorf("unexpected response type %d", msgType)
 	}
 
+	winnerDocuments := map[int]bool{}
+
 	if len(payload) > 0 {
 		for _, documentStr := range strings.Split(string(payload), ",") {
 			document, err := strconv.Atoi(documentStr) 
 			if err != nil {
 				continue
 			}
-			if line, ok := bets[document]; ok {
+
+			winnerDocuments[document] = true
+
+			/*if line, ok := bets[document]; ok {
 				outputFile.WriteString(line + "\n")
-			}
+			}*/
 		}
 	}
-	return nil
+
+	if len(winnerDocuments) == 0 {
+		return nil
+	}
+
+	if _, err := inputFile.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	scanner = bufio.NewScanner(inputFile)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, ",")
+		documentNumber, err := strconv.Atoi(fields[2])
+		if err != nil {
+			continue
+		}
+		if winnerDocuments[documentNumber] {
+			outputFile.WriteString(line + "\n")
+		}
+	}
+	return scanner.Err()
+
+
+	//return nil
 }

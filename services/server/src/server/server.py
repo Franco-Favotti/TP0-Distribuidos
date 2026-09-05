@@ -4,6 +4,7 @@ import threading
 import logger
 import safe_socket
 import protocol
+import signal
 from lottery.lottery import Lottery
 
 _STORAGE_PATH = "/tmp/bets.csv"
@@ -20,6 +21,16 @@ class Server:
         self.quorum_lock = threading.Lock()
         self.quorum_cond = threading.Condition(self.quorum_lock)
         self.finished_agencies = set()
+
+        self._shutdown = threading.Event()
+        self._server_socket = None
+
+    def shutdown(self):
+        self._shutdown.set()
+        with self.quorum_cond:
+            self.quorum_cond.notify_all()
+        if self._server_socket:
+            self._server_socket.close()
 
     def _wait_for_quorum(self, agency_id: int):
         with self.quorum_cond:
@@ -67,19 +78,25 @@ class Server:
     def run(self):
         action = "accept-connection"
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+            self._server_socket = server_socket
             server_socket.bind((self.server_host, self.server_port))
             server_socket.listen()
-            while True:
+            while not self._shutdown.is_set():
+            #while True:
                 try:
                     logger.info(action, logger.LogResult.in_progress)
                     client_socket, _ = server_socket.accept()
-                    logger.info(action, logger.LogResult.success)
-                    threading.Thread(
-                        target=self._handle_client, args=(client_socket,), daemon=True
-                    ).start()
-                except Exception as e:
-                    logger.error(action, logger.LogResult.fail)
-                    raise e
+                except OSError:
+                    break
+                
                 logger.info(action, logger.LogResult.success)
+                threading.Thread(
+                    target=self._handle_client, args=(client_socket,), daemon=True
+                ).start()
 
-                #self._handle_client(client_socket)
+
+                #except Exception as e:
+                #    logger.error(action, logger.LogResult.fail)
+                #    raise e
+
+
