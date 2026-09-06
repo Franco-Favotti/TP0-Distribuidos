@@ -5,12 +5,11 @@ import (
 	"time"
 	"os"
 	"bufio"
-	"fmt"
-	"strings"
-	"strconv"
+	"errors"
 	"sync/atomic"
 	"io"
 
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/util"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
 )
@@ -75,6 +74,7 @@ func connectToServer(host, port string) (net.Conn, error) {
 	return conn, err
 }
 
+
 func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
 	defer client.conn.Close()
@@ -91,12 +91,10 @@ func (client *Client) Run() error {
 	}
 	defer outputFile.Close()
 
-	//bets := map[int]string{}
-
-	batchSize, err := strconv.Atoi(client.config.BatchSize)
+	batchSize, err := util.ParseInt(client.config.BatchSize)
 
 	if err != nil {
-		return fmt.Errorf("BATCH_SIZE inválido: %q", client.config.BatchSize)
+		errors.New("BATCH_SIZE inválido: " + client.config.BatchSize)
 	}
 
 	batch := make([]protocol.Bet, 0, batchSize)
@@ -114,7 +112,7 @@ func (client *Client) Run() error {
 			return err
 		}
 		if msgType != protocol.MsgBatchAck {
-			return fmt.Errorf("unexpected response type %d", msgType)
+			errors.New("unexpected response type " + util.ParseString(int(msgType)))
 		}
 		batch = batch[:0]
 		return nil
@@ -133,14 +131,11 @@ func (client *Client) Run() error {
 			continue
 		}
 
-		fields := strings.Split(line, ",")
-		//document, err := strconv.Atoi(fields[2])
+		fields := util.SplitFields(line, ',')
 
 		if err != nil {
-			return fmt.Errorf("documento inválido en input: %q", fields[2])
+			errors.New("documento inválido en input: " + fields[2])
 		}
-
-		//bets[document] = line
 
 		batch = append(batch, protocol.Bet{
 			FirstName: fields[0], LastName: fields[1], Document: fields[2],
@@ -173,23 +168,19 @@ func (client *Client) Run() error {
 	}
 
 	if msgType != protocol.MsgWinners {
-		return fmt.Errorf("unexpected response type %d", msgType)
+		errors.New("unexpected response type " + util.ParseString(int(msgType)))
 	}
 
 	winnerDocuments := map[int]bool{}
 
 	if len(payload) > 0 {
-		for _, documentStr := range strings.Split(string(payload), ",") {
-			document, err := strconv.Atoi(documentStr) 
+		for _, documentStr := range util.SplitFields(string(payload), ',') {
+			document, err := util.ParseInt(documentStr) 
 			if err != nil {
 				continue
 			}
 
 			winnerDocuments[document] = true
-
-			/*if line, ok := bets[document]; ok {
-				outputFile.WriteString(line + "\n")
-			}*/
 		}
 	}
 
@@ -207,8 +198,8 @@ func (client *Client) Run() error {
 		if line == "" {
 			continue
 		}
-		fields := strings.Split(line, ",")
-		documentNumber, err := strconv.Atoi(fields[2])
+		fields := util.SplitFields(line, ',')
+		documentNumber, err := util.ParseInt(fields[2])
 		if err != nil {
 			continue
 		}
@@ -218,6 +209,4 @@ func (client *Client) Run() error {
 	}
 	return scanner.Err()
 
-
-	//return nil
 }

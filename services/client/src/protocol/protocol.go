@@ -1,9 +1,7 @@
 package protocol
 
 import (
-	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
@@ -25,14 +23,12 @@ type Bet struct {
 }
 
 func Encode_bet_batch(agencyId string, bets []Bet) []byte {
-	var buf bytes.Buffer
-	buf.WriteString(agencyId)
-	buf.WriteByte('|')
+	payload := agencyId + "|"
 	for _, bet := range bets {
-		buf.WriteString(fmt.Sprintf("%s,%s,%s,%s,%s\n",
-			bet.FirstName, bet.LastName, bet.Document, bet.Birthdate, bet.Number))
+		payload += bet.FirstName + "," + bet.LastName + "," + bet.Document + "," +
+			bet.Birthdate + "," + bet.Number + "\n"
 	}
-	return buf.Bytes()
+	return []byte(payload)
 }
 
 func Write_message(w io.Writer, msgType byte, payload []byte) error {
