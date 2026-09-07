@@ -22,6 +22,7 @@ type Bet struct {
 	Number    string
 }
 
+//Concatena agencyId + apuestas separadas por salto de linea
 func Encode_bet_batch(agencyId string, bets []Bet) []byte {
 	payload := agencyId + "|"
 	for _, bet := range bets {
@@ -31,6 +32,7 @@ func Encode_bet_batch(agencyId string, bets []Bet) []byte {
 	return []byte(payload)
 }
 
+//Arma el Header de 5 bytes (tipo + longitud) y lo manda junto con el payload
 func Write_message(w io.Writer, msgType byte, payload []byte) error {
 	header := make([]byte, 5)
 	header[0] = msgType
@@ -38,6 +40,7 @@ func Write_message(w io.Writer, msgType byte, payload []byte) error {
 	return safe_socket.SendAll(w, append(header, payload...))
 }
 
+//Lee el Header de 5 bytes, extrae tipo y longitud, y lee el payload.
 func Read_message(r io.Reader) (byte, []byte, error) {
 	header, err := safe_socket.RecvAll(r, 5)
 	if err != nil {

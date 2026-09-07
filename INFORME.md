@@ -34,7 +34,7 @@ Cada apuesta se serializa como texto plano separado por comas (`first_name,last_
 
 ### 2.4 Separación dominio / comunicación y diseño de memoria acotada
 
-Para evitar retener en memoria todo el contenido del `INPUT_FILE` (lo cual escalaría linealmente con el tamaño del archivo), el cliente procesa el archivo en **dos pasadas**:
+Para evitar retener en memoria todo el contenido del `INPUT_FILE` (lo cual escalaría linealmente con el tamaño del archivo), el cliente procesa el archivo en dos pasadas:
 
 1. **Primera pasada**: lee el archivo línea por línea, agrupa las apuestas en lotes de tamaño `BATCH_SIZE` y los envía. Solo se mantiene en memoria el lote en curso; nunca el archivo completo.
 2. **Segunda pasada**: Tras recibir `WINNERS`se guarda únicamente el conjunto de documentos ganadores el cual denota un tamaño relativamente chico, se relee el archivo desde el principio con el mismo descriptor, y se copian a `OUTPUT_FILE` únicamente las líneas cuyo documento está en ese conjunto.
@@ -49,7 +49,7 @@ El cliente agrupa hasta `BATCH_SIZE` apuestas por mensaje antes de enviarlas, re
 
 ### 4.1 Herramienta de concurrencia elegida: threads
 
-Se optó por threading (uno por cada conexión de cliente aceptada) en lugar de multiprocessing. Se tomó esta decisión ya que el trabajo del servidor se basa predominantemente en esperar operaciones de entrada/salida (esperando datos de sockets), no CPU-bound: durante las esperas de E/S, el GIL de Python se libera, por lo que múltiples threads pueden progresar de forma efectivamente concurrente sin que el GIL se convierta en un cuello de botella. 
+Se optó por threading (uno por cada conexión de cliente aceptada) en lugar de multiprocessing. Se tomó esta decisión ya que el trabajo del servidor se basa predominantemente en esperar operaciones de entrada/salida, no CPU-bound: durante las esperas de E/S, el GIL de Python se libera, por lo que múltiples threads pueden progresar de forma efectivamente concurrente sin que el GIL se convierta en un cuello de botella. 
 
 ### 4.2 Mutex — exclusión mutua sobre el storage compartido
 
@@ -85,8 +85,8 @@ Una vez liberado el quorum, cada thread calcula de forma independiente solo los 
 
 ### 6.1 Permitidas explícitamente y utilizadas
 
-| Librería | Lenguaje | Uso
-|---|---|---|---|
+| Librería | Lenguaje | Uso |
+|---|---|---|
 | `signal` | Python | Captura de SIGTERM en el servidor | 
 | `threading` | Python | Threads, `Lock`, `Condition`, `Event` | 
 | `os/signal` | Go | Captura de SIGTERM en el cliente |

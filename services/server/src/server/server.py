@@ -1,10 +1,8 @@
-import os
 import socket
 import threading
 import logger
 import safe_socket
 import protocol
-import signal
 from lottery.lottery import Lottery
 
 _STORAGE_PATH = "/tmp/bets.csv"
@@ -25,6 +23,7 @@ class Server:
         self._shutdown = threading.Event()
         self._server_socket = None
 
+    #Marca el evento de apagado, despierta a los threads esperando quorum, y cierra el socket de escucha
     def shutdown(self):
         self._shutdown.set()
         with self.quorum_cond:
@@ -32,13 +31,15 @@ class Server:
         if self._server_socket:
             self._server_socket.close()
 
+    #Registra la agencia como terminada y bloquea el thread hasta juntar el quorum minimo
     def _wait_for_quorum(self, agency_id: int):
         with self.quorum_cond:
             self.finished_agencies.add(agency_id)
-            while len(self.finished_agencies) < self.agency_quorum_min:
+            while len(self.finished_agencies) < self.agency_quorum_min and not self._shutdown.is_set():
                 self.quorum_cond.wait()
             self.quorum_cond.notify_all()
 
+    #Procesa batches y al recibir MSG_DONE, espera el quorum y responde con los ganadores de esa agencia
     def _handle_client(self, client_socket):
         action = "handle-client"
         agency_id = None
@@ -73,8 +74,8 @@ class Server:
         except Exception as e:
             logger.error(action, logger.LogResult.fail)
             client_socket.close()
-            #raise e
 
+    #Loop de accept(), lanzando un thread por conexion
     def run(self):
         action = "accept-connection"
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
@@ -82,7 +83,6 @@ class Server:
             server_socket.bind((self.server_host, self.server_port))
             server_socket.listen()
             while not self._shutdown.is_set():
-            #while True:
                 try:
                     logger.info(action, logger.LogResult.in_progress)
                     client_socket, _ = server_socket.accept()
@@ -93,10 +93,4 @@ class Server:
                 threading.Thread(
                     target=self._handle_client, args=(client_socket,), daemon=True
                 ).start()
-
-
-                #except Exception as e:
-                #    logger.error(action, logger.LogResult.fail)
-                #    raise e
-
 
